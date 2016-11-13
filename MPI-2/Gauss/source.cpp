@@ -21,19 +21,23 @@ double* pMatrixTest;
 void Input(double*& Matrix, double*& Result, int& Size) // ввод системы уравнений
 {
 	cout << "\t\t***The Gauss method - horizontal band scheme***\n\n";
+	Matrix = new double[Size * (Size+1)];
+	Result = new double[Size];
+	pPivotPos = new int[Size];
+	pPivotIter = new int[Size];
+	fill(pPivotPos, pPivotPos + Size, 0);
+	fill(pPivotIter, pPivotIter + Size, -1);
 #ifdef FILE_INPUT
 	ifstream fin("input.txt");
 	for (int i = 0; i < Size; i++) 
 		for (int j = 0; j < Size + 1; j++)
 			fin >> Matrix [i * (Size + 1) + j];
-	//fin.close();
-	/* #ifdef KEYBOARD_INPUT
+	fin.close();
+/*#ifdef KEYBOARD_INPUT
 	for (int i = 0; i < Size; i++) 
 	for (int j = 0; j < Size + 1; j++)
-	scanf("%lf", Matrix + i * (Size + 1) + j); */
+	scanf("%lf", Matrix + i * (Size + 1) + j);*/
 #else
-	Matrix = new double[Size * (Size+1)];
-	Result = new double[Size];
 	srand(unsigned int(time(NULL)));
 	cout << "\nThe system of equation:\n";
 	for(int i = 0; i < Size; i++, cout << endl)
@@ -43,10 +47,6 @@ void Input(double*& Matrix, double*& Result, int& Size) // ввод систем
 			cout << Matrix[(Size+1) * i + j] << " ";
 			if (j == Size - 1) cout << "| ";
 		}
-		pPivotPos = new int[Size];
-		pPivotIter = new int[Size];
-		fill(pPivotPos, pPivotPos + Size, 0);
-		fill(pPivotIter, pPivotIter + Size, -1);
 #endif
 }
 
