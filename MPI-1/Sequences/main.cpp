@@ -1,8 +1,8 @@
+#include "mpi.h"
 #include <iostream>
 #include <cstdlib>
 #include <iomanip> 
-#include "mpi.h"
-#include "time.h"
+#include <ctime>
 
 using namespace std;
 
