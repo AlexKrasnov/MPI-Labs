@@ -6,7 +6,6 @@
 
 using namespace std;
 
-#define ROOT 0
 #define MAX_VALUE 10
 #define SIZE_MATRIX 2
 //#define FILE_INPUT
@@ -152,7 +151,6 @@ void ParallelFindPosLeadingRow(double* pMatrixp, double* pSubMatr, int Size, int
 
 int main(int argc, char* argv[])
 {
-	setlocale(LC_ALL, "Rus");
 	int ProcNum, ProcRank; // число процессов, ранг процесса
 	int Size = SIZE_MATRIX, PivotRow; // размер матрицы, ведущая строка
 	double start_time, end_time, serial_time, parallel_time; // время работы
@@ -168,7 +166,7 @@ int main(int argc, char* argv[])
 	MPI_Type_commit(&TPivot);
 	LeadingRowPos = new int[Size];
 	LeadingRowIter = new int[Size];
-	if (ProcRank == ROOT)
+	if (ProcRank == 0)
 	{
 	    fill(LeadingRowPos, LeadingRowPos + Size, 0);
 	    fill(LeadingRowIter, LeadingRowIter + Size, -1);
@@ -189,11 +187,10 @@ int main(int argc, char* argv[])
 	MPI_Barrier(MPI_COMM_WORLD);
 	fill(LeadingRowPos, LeadingRowPos + Size, 0);
 	fill(LeadingRowIter, LeadingRowIter + Size, -1);
-	int k = Size / ProcNum;
+	int k = Size / ProcNum; // Число лент при распараллеливании, желательно, чтобы Size было кратно ProcNum
 	int Iter; //Номер текущей итерации прямого хода
 	int* LeadingRowIterL = new int[k];
 	fill(LeadingRowIterL, LeadingRowIterL + Size, -1);
-	double* pPivotString = new double[Size+1];
 	pSubMatr = new double[(Size+1)*k];
 	double* pPivotStr = new double[Size+1];
 	start_time = MPI_Wtime();
@@ -209,16 +206,15 @@ int main(int argc, char* argv[])
 		} 
 		MPI_Scatter(LeadingRowIter, k, MPI_INT, LeadingRowIterL, k, MPI_INT, 0, MPI_COMM_WORLD); 
 		MPI_Bcast(pPivotStr, Size+1, MPI_DOUBLE, 0, MPI_COMM_WORLD); //Собираем ведущую строку на всех процессах
-		double PivotValue, PivotFactor;
-		PivotValue = pPivotStr[Iter];
-		for(int i = 0; i < k; i++)
+		double LeadingRow = pPivotStr[Iter], koef = 1;
+		for(int i = 0; i < k; i++) // преобразования метода Гауса для каждой ленты
 		{
 			if( LeadingRowIterL[i] == -1 )
 			{
-				PivotFactor = pSubMatr[i*(Size+1) + Iter] / PivotValue;
+				koef = pSubMatr[i*(Size+1) + Iter] / LeadingRow;
 				for(int j = Iter; j < Size; j++)
-					pSubMatr[i*(Size+1) + j] -= PivotFactor * pPivotStr[j];
-				pSubMatr[i*(Size+1) + (Size)] -= PivotFactor * pPivotStr[Size];
+					pSubMatr[i*(Size+1) + j] -= koef * pPivotStr[j];
+				pSubMatr[i*(Size+1) + (Size)] -= koef * pPivotStr[Size];
 			}
 		} 
 		MPI_Gather(pSubMatr, k*(Size+1), MPI_DOUBLE, pMatrixp, k*(Size+1), MPI_DOUBLE,0, MPI_COMM_WORLD); 
