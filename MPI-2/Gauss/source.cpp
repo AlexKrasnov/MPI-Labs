@@ -1,4 +1,4 @@
-﻿#include "mpi.h"
+﻿#include <mpi.h>
 #include <iostream>
 #include <fstream>
 #include <cmath>
@@ -7,7 +7,7 @@
 using namespace std;
 
 #define MAX_VALUE 10
-#define SIZE_MATRIX 2
+#define SIZE_MATRIX 200
 //#define FILE_INPUT
 //#define FILE_OUTPUT
 //#define KEYBOARD_INPUT
@@ -33,13 +33,16 @@ void Input(double*& Matrix, double*& Result, int& Size) // ввод систем
 #else
 	srand(unsigned int(time(NULL)));
 	cout << "\nThe system of equation:\n";
-	for(int i = 0; i < Size; i++, cout << endl)
-		for(int j = 0; j < Size+1; j++)
-		{
-			Matrix[(Size+1) * i + j] = rand() % MAX_VALUE - MAX_VALUE / 2;
-			cout << Matrix[(Size+1) * i + j] << " ";
-			if (j == Size - 1) cout << "| ";
-		}
+	for (int i = 0; i < Size; i++)
+		for (int j = 0; j < Size + 1; j++)
+			Matrix[(Size+1) * i + j] = rand() % MAX_VALUE + 1;
+	if (Size <= 10)
+		for(int i = 0; i < Size; i++, cout << endl)
+			for(int j = 0; j < Size + 1; j++)
+			{
+				cout << Matrix[(Size+1) * i + j] << " ";
+				if (j == Size - 1) cout << "| ";
+			}
 #endif
 }
 
@@ -51,10 +54,13 @@ void Output(double* Result, int Size) // вывод результата
 		fout << Result[i] << " ";
 	fout.close();
 #else
-	cout << "\nResult:";
-	for(int i = 0; i < Size; i++)
-		cout << Result[i] << " ";
-	cout << endl;
+	if (Size <= 10)
+	{
+		cout << "\nResult:";
+		for(int i = 0; i < Size; i++)
+			cout << Result[i] << " ";
+		cout << endl;
+	}
 #endif
 }
 
@@ -149,10 +155,31 @@ void ParallelFindPosLeadingRow(double* pMatrixp, double* pSubMatr, int Size, int
 	}
 }
 
+void Validation(double* sResult, double* pResult, int N)
+{
+	bool f = true;
+	if (sResult != NULL && pResult != NULL)
+		for (int i = 0; i < N; i++)
+		{
+			if (sResult[i] != pResult[i])
+			{
+				f = false;
+				break;
+			}
+		}
+		if (f == true)
+			cout << "\nResults are equal\n" << endl;
+		else 
+			cout << "\nResults are not equal\n" << endl;
+}
+
 int main(int argc, char* argv[])
 {
-	int ProcNum, ProcRank; // число процессов, ранг процесса
-	int Size = SIZE_MATRIX, PivotRow; // размер матрицы, ведущая строка
+	int ProcNum, ProcRank, PivotRow, Size; // число процессов, ранг процесса, ведущая строка, размер матрицы
+	if (argc < 2)
+		Size = SIZE_MATRIX ;
+	else 
+		Size = atoi(argv[1]);
 	double start_time, end_time, serial_time, parallel_time; // время работы
 	double* pMatrixs(NULL), *pMatrixp(NULL), *pResults(NULL), *pResultp(NULL), *pSubMatr(NULL);
 	MPI_Init(&argc, &argv);
@@ -168,14 +195,14 @@ int main(int argc, char* argv[])
 	LeadingRowIter = new int[Size];
 	if (ProcRank == 0)
 	{
-	    fill(LeadingRowPos, LeadingRowPos + Size, 0);
-	    fill(LeadingRowIter, LeadingRowIter + Size, -1);
+		fill(LeadingRowPos, LeadingRowPos + Size, 0);
+		fill(LeadingRowIter, LeadingRowIter + Size, -1);
 		Input(pMatrixs, pResults, Size);
 		pMatrixp = new double[(Size+1)*Size];
 		for(int i = 0; i < Size; i++)
 			for(int j = 0; j < Size+1; j++)
 				pMatrixp[i*(Size+1)+j] = pMatrixs[i*(Size+1)+j]; 
-		cout << "Serial realisation\n";
+		cout << "Serial realisation:\n";
 		start_time = MPI_Wtime();
 		SerialGaussPart1(pMatrixs, Size);
 		SerialGaussPart2(pMatrixs, pResults, Size);
@@ -248,14 +275,17 @@ int main(int argc, char* argv[])
 				}
 	}
 	end_time = MPI_Wtime();
-	if( ProcRank == 0 )
+	if(ProcRank == 0)
 	{
-		cout << "\nParallel realisation";
+		cout << "\nParallel realisation:" << endl;
 		Output(pResultp, Size);
 		parallel_time = end_time - start_time;
 		cout << "\nTime: " << parallel_time << endl;
 		cout << "\nBoost: " << serial_time / parallel_time << endl;
 	}
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(ProcRank == ProcNum - 1)
+		Validation(pResults, pResultp, Size);
 	MPI_Barrier(MPI_COMM_WORLD);
 	MPI_Finalize();
 	return 0;
