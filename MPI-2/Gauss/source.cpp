@@ -6,7 +6,7 @@
 
 using namespace std;
 
-#define MAX_VALUE 10
+#define MAX_VALUE 9
 #define SIZE_MATRIX 200
 //#define FILE_INPUT
 //#define FILE_OUTPUT
@@ -17,7 +17,7 @@ int* LeadingRowIter; // Номера итераций прямого хода, �
 
 void Input(double*& Matrix, double*& Result, int& Size) // ввод системы уравнений
 {
-	cout << "\t\t***The Gauss method - horizontal band scheme***\n\n";
+	cout << "\n\t\t***The Gauss method - horizontal band scheme***\n\n";
 	Matrix = new double[Size * (Size+1)];
 	Result = new double[Size];
 #ifdef FILE_INPUT
@@ -32,7 +32,7 @@ void Input(double*& Matrix, double*& Result, int& Size) // ввод систем
 	scanf("%lf", Matrix + i * (Size + 1) + j);*/
 #else
 	srand(unsigned int(time(NULL)));
-	cout << "\nThe system of equation:\n";
+	cout << "The system of equation:\n";
 	for (int i = 0; i < Size; i++)
 		for (int j = 0; j < Size + 1; j++)
 			Matrix[(Size+1) * i + j] = rand() % MAX_VALUE + 1;
@@ -54,14 +54,29 @@ void Output(double* Result, int Size) // вывод результата
 		fout << Result[i] << " ";
 	fout.close();
 #else
-	if (Size <= 10)
+	if(Size <= 10)
 	{
-		cout << "\nResult:";
+		cout << "\nResult :";
 		for(int i = 0; i < Size; i++)
-			cout << Result[i] << " ";
+			cout << floor(Result[i]*1000 + 0.5)/1000. << " ";
 		cout << endl;
 	}
 #endif
+}
+
+void Validation(double* sResult, double* pResult, int N)
+{
+	bool f = true;
+	if (sResult != NULL && pResult != NULL)
+		for (int i = 0; i < N && f == true; i++)
+		{
+			if (floor(sResult[i]*1000 + 0.5)/1000. != floor(pResult[i]*1000 + 0.5)/1000.)
+				f = false;
+		}
+		if (f == true)
+			cout << "\nResults are equal\n" << endl;
+		else 
+			cout << "\nResults are not equal\n" << endl;
 }
 
 //------------------------------------------------------------------------
@@ -126,71 +141,167 @@ void SerialGaussPart2(double* pMatrix, double* pResult, int Size) // Обрат�
 //      Параллельная реализация
 //------------------------------------------------------------------------
 
-typedef struct {int Row; double Value;} sPivotRow; 
-
-void ParallelFindPosLeadingRow(double* pMatrixp, double* pSubMatr, int Size, int Iter, int ProcRank, int ProcNum, MPI_Datatype TPivot, int &PivotRow, int* pPivotIterL, int* pPivotIterp)
-{   // Определение позиции ведущей строки
-	sPivotRow* recvtmp = new sPivotRow[ProcNum];
-	sPivotRow A; A.Row = -1; A.Value = 0;
-	int k = Size/ProcNum;
-	MPI_Scatter(pMatrixp, (Size+1)*k, MPI_DOUBLE, pSubMatr, (Size+1)*k, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-	for(int i = 0; i < k; i++)
-	{
-		if( (pPivotIterL[i] == -1) && fabs(pSubMatr[i*(Size+1)+Iter]) > A.Value )
-		{
-			A.Value = pSubMatr[i*(Size+1)+Iter];
-			A.Row = ProcRank*k + i;
-		}
-	} 
-	MPI_Gather(&A, 1, TPivot, recvtmp, 1, TPivot,0, MPI_COMM_WORLD); 
-	if( ProcRank == 0 )
-	{
-		int MaxValue = 0;
-		for(int i = 0; i < ProcNum; i++)
-			if( fabs(recvtmp[i].Value) > MaxValue && recvtmp[i].Row != -1 )
-			{
-				PivotRow = recvtmp[i].Row;
-				MaxValue = int(recvtmp[i].Value);
-			}	
-	}
-}
-
-void Validation(double* sResult, double* pResult, int N)
+void ParallelCalculation(double* Matrix, double* Result , int Size , int ProcNum , int ProcRank)
 {
-	bool f = true;
-	if (sResult != NULL && pResult != NULL)
-		for (int i = 0; i < N; i++)
+	int PivotRow; // ведущая строка
+	int *pPivotPosp = new int[Size]; // Номера строк, которые были выбраны ведущими
+	int *pPivotIterp = new int[Size]; // Номера итераций, на которых строки процессора
+	// использовались в качестве ведущих
+	fill(pPivotIterp, pPivotIterp+Size,-1);
+	double* pSubMatr = NULL;
+	typedef struct {int Row; double Value;} sPivotRow; // Структура для выбора ведущего элемента
+	// sPivotRow используется для хранения текущей строки матрицы и соответствующего жлемента вектора b
+	MPI_Datatype TPivot;
+	int blocklens[2] = {1, 1};
+	MPI_Aint indices[2] = {offsetof(sPivotRow,Row ), offsetof(sPivotRow, Value)};
+	MPI_Datatype oldtypes[2] = {MPI_INT, MPI_DOUBLE};
+	MPI_Type_create_struct(2, blocklens, indices, oldtypes, &TPivot);
+	MPI_Type_commit( &TPivot );
+	int k = Size / ProcNum, p = k + Size % ProcNum, Iter, *pPivotIterL;
+	if(ProcRank == 0)
+	{
+		pPivotIterL = new int[p];
+		fill(pPivotIterL,pPivotIterL+p,-1);
+	} 
+	else 
+	{
+		pPivotIterL = new int[k];
+		fill(pPivotIterL,pPivotIterL+k,-1);
+	}
+	int *send_counts, *displs, *send_countsg, *displsg;
+	send_counts = new int[ProcNum];
+	displs = new int[ProcNum];
+	send_countsg = new int[ProcNum];
+	displsg = new int[ProcNum];
+	send_counts[0] = p*(Size+1);
+	for(int i = 1; i < ProcNum;i++)
+		send_counts[i] = k*(Size+1);
+	displs[0] = 0;
+	for(int i = 1; i < ProcNum;i++)
+		displs[i] = p*(Size+1) + (i-1)*k*(Size+1);
+	send_countsg[0] = p*(Size+1);
+	for(int i = 1; i < ProcNum;i++)
+		send_countsg[i] = k*(Size+1);
+	displsg[0] = 0;
+	for(int i = 1; i < ProcNum;i++)
+		displsg[i] = p*(Size+1) + (i-1)*k*(Size+1);
+	double* pPivotString = new double[Size+1];
+	if(ProcRank == 0) pSubMatr = new double[(Size+1)*p];
+	else pSubMatr = new double[(Size+1)*k];
+	double* pPivotStr = new double[Size+1];
+	MPI_Scatterv(Matrix, send_counts, displs, MPI_DOUBLE, pSubMatr, send_counts[ProcRank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	for(Iter = 0; Iter < Size; Iter++) // прямой ход метода Гауса
+	{
+		// Определение позиции ведущей строки
+		sPivotRow* recvtmp = new sPivotRow[ProcNum];
+		sPivotRow A; A.Row = -1; A.Value = 0;
+		if(ProcRank == 0)
 		{
-			if (sResult[i] != pResult[i])
-			{
-				f = false;
-				break;
-			}
-		}
-		if (f == true)
-			cout << "\nResults are equal\n" << endl;
+			for(int i = 0; i < p; i++)
+				if( (pPivotIterL[i] == -1) && fabs(pSubMatr[i*(Size+1)+Iter]) > A.Value )
+				{
+					A.Value = pSubMatr[i*(Size+1)+Iter];
+					A.Row = i;
+				}
+		} 
 		else 
-			cout << "\nResults are not equal\n" << endl;
-}
+		{
+			for(int i = 0; i < k; i++)
+				if( (pPivotIterL[i] == -1) && fabs(pSubMatr[i*(Size+1)+Iter]) > A.Value )
+				{
+					A.Value = pSubMatr[i*(Size+1)+Iter];
+					A.Row = p + (ProcRank-1)*k + i;
+				}
+		}
+		MPI_Gather(&A, 1, TPivot, recvtmp, 1, TPivot,0, MPI_COMM_WORLD); 
+		if( ProcRank == 0 )
+		{
+			double MaxValue = 0;
+			for(int i = 0; i < ProcNum; i++)
+				if( fabs(recvtmp[i].Value) > MaxValue && recvtmp[i].Row != -1 )
+				{
+					PivotRow = recvtmp[i].Row;
+					MaxValue = recvtmp[i].Value;
+				}	
+		}
+		MPI_Bcast(&PivotRow, 1, MPI_INT, 0, MPI_COMM_WORLD);
+		if(ProcRank == 0)
+			pPivotPosp[Iter] = PivotRow;
+		int r;
+		if(PivotRow < p) r = 0;
+		else  r = (PivotRow - p) / k + 1; 
+		int Str;
+		if( r == 0 ) Str = PivotRow;
+		else Str = (PivotRow - p - k*(ProcRank - 1))% k;
+		if( ProcRank == r )	
+		{
+			for(int i = 0; i < Size+1; i++)
+				pPivotStr[i] = pSubMatr[Str*(Size+1)+i];
+			pPivotIterL[Str] = Iter;
+		}
+		MPI_Bcast(pPivotStr, Size+1, MPI_DOUBLE, r, MPI_COMM_WORLD);
+		double PivotValue, Koef;
+		PivotValue = pPivotStr[Iter];
+		int s = 0;
+		if (ProcRank == 0) s = p;
+		else s = k;
+		for(int i = 0; i < s; i++) // преобразования прямого хода
+			if( pPivotIterL[i] == -1 )
+			{
+				Koef = pSubMatr[i*(Size+1) + Iter] / PivotValue;
+				for(int j = Iter; j < Size; j++)
+					pSubMatr[i*(Size+1) + j] -= Koef * pPivotStr[j];
+				pSubMatr[i*(Size+1) + (Size)] -= Koef * pPivotStr[Size];
+			}
+	}  
+	MPI_Gatherv(pSubMatr, send_countsg[ProcRank] , MPI_DOUBLE , Matrix , send_countsg, displsg, MPI_DOUBLE,0, MPI_COMM_WORLD);
+	MPI_Bcast(pPivotPosp, Size, MPI_INT, 0, MPI_COMM_WORLD);
+	for(int i = Size-1; i >= 0; --i) // обратный ход метода Гауса
+	{
+		int StrPos = pPivotPosp[i];  // Номер строки, соответствующей i-ой итерации
+		int rank;
+		if (StrPos < p) rank = 0;
+		else rank = (StrPos - p) / k + 1; 
+		if (ProcRank == rank)
+		{
+			int StrPosL;
+			if (ProcRank == 0) StrPosL = StrPos;
+			else StrPosL = (StrPos - p - k*(ProcRank - 1))% k;
+			Result[i] = pSubMatr[StrPosL*(Size+1) + Size] / pSubMatr[(Size+1) * StrPosL + i];
+			pSubMatr[StrPosL*(Size+1) + i] = 1;
+			for(int m = 0; m < p; m++)
+				if( m != StrPosL && i > pPivotIterL[m]) // Итерация, на которой данная строка была ведущей
+				{
+					pSubMatr[m*(Size+1) + Size] -= pSubMatr[m*(Size+1) + i] * Result[i];
+					pSubMatr[m*(Size+1) + i] = 0;
+				} 
+		}
+		MPI_Bcast(&Result[i], 1, MPI_DOUBLE, rank, MPI_COMM_WORLD); 
+		if (ProcRank != rank)
+		{
+			int s;
+			if (ProcRank == 0) s = p;
+			else s = k;
+			for(int m = 0; m < s; m++)
+				if( i > pPivotIterL[m]) // Итерация, на которой эта строка была ведущей(m-я строка)
+				{
+					pSubMatr[m*(Size+1) + Size] -= pSubMatr[m*(Size+1) + i] * Result[i];
+					pSubMatr[m*(Size+1) + i] = 0;
+				}
+		}
+	}
+} 
 
 int main(int argc, char* argv[])
 {
-	int ProcNum, ProcRank, PivotRow, Size; // число процессов, ранг процесса, ведущая строка, размер матрицы
-	if (argc < 2)
-		Size = SIZE_MATRIX ;
-	else 
-		Size = atoi(argv[1]);
+	int ProcNum, ProcRank, Size; // число процессов, ранг процесса, ведущая строка, размер матрицы
+	if (argc < 2) Size = SIZE_MATRIX ;
+	else Size = atoi(argv[1]);
 	double start_time, end_time, serial_time, parallel_time; // время работы
 	double* pMatrixs(NULL), *pMatrixp(NULL), *pResults(NULL), *pResultp(NULL), *pSubMatr(NULL);
 	MPI_Init(&argc, &argv);
 	MPI_Comm_size(MPI_COMM_WORLD, &ProcNum);
 	MPI_Comm_rank(MPI_COMM_WORLD, &ProcRank);
-	MPI_Datatype TPivot;
-	int blocklens[2] = {1, 1};
-	MPI_Aint indices[2] = {offsetof(sPivotRow,Row), offsetof(sPivotRow, Value)};
-	MPI_Datatype oldtypes[2] = {MPI_INT, MPI_DOUBLE};
-	MPI_Type_create_struct(2, blocklens, indices, oldtypes, &TPivot);
-	MPI_Type_commit(&TPivot);
 	LeadingRowPos = new int[Size];
 	LeadingRowIter = new int[Size];
 	if (ProcRank == 0)
@@ -201,92 +312,31 @@ int main(int argc, char* argv[])
 		pMatrixp = new double[(Size+1)*Size];
 		for(int i = 0; i < Size; i++)
 			for(int j = 0; j < Size+1; j++)
-				pMatrixp[i*(Size+1)+j] = pMatrixs[i*(Size+1)+j]; 
-		cout << "Serial realisation:\n";
+				pMatrixp[i*(Size+1)+j] = pMatrixs[i*(Size+1)+j];
+		cout << "\nSerial realisation:\n";
 		start_time = MPI_Wtime();
 		SerialGaussPart1(pMatrixs, Size);
 		SerialGaussPart2(pMatrixs, pResults, Size);
 		Output(pResults, Size);	
 		end_time = MPI_Wtime();
 		serial_time = end_time - start_time;
-		cout << "Time: " << serial_time << "\n";
+		cout << "\nTime: " << serial_time << "\n";
+
+		start_time = MPI_Wtime();
 	} 
-	MPI_Barrier(MPI_COMM_WORLD);
-	fill(LeadingRowPos, LeadingRowPos + Size, 0);
-	fill(LeadingRowIter, LeadingRowIter + Size, -1);
-	int k = Size / ProcNum; // Число лент при распараллеливании, желательно, чтобы Size было кратно ProcNum
-	int Iter; //Номер текущей итерации прямого хода
-	int* LeadingRowIterL = new int[k];
-	fill(LeadingRowIterL, LeadingRowIterL + Size, -1);
-	pSubMatr = new double[(Size+1)*k];
-	double* pPivotStr = new double[Size+1];
-	start_time = MPI_Wtime();
-	for(Iter = 0; Iter < Size; Iter++) // прямой ход
-	{
-		ParallelFindPosLeadingRow(pMatrixp, pSubMatr, Size, Iter, ProcRank, ProcNum, TPivot, PivotRow, LeadingRowIterL, LeadingRowIter);
-		if(ProcRank == 0)
-		{
-			for(int i = 0; i < Size+1; i++)
-				pPivotStr[i] = pMatrixp[PivotRow*(Size+1)+i];
-			LeadingRowPos[Iter] = PivotRow;
-			LeadingRowIter[PivotRow] = Iter;
-		} 
-		MPI_Scatter(LeadingRowIter, k, MPI_INT, LeadingRowIterL, k, MPI_INT, 0, MPI_COMM_WORLD); 
-		MPI_Bcast(pPivotStr, Size+1, MPI_DOUBLE, 0, MPI_COMM_WORLD); //Собираем ведущую строку на всех процессах
-		double LeadingRow = pPivotStr[Iter], koef = 1;
-		for(int i = 0; i < k; i++) // преобразования метода Гауса для каждой ленты
-		{
-			if( LeadingRowIterL[i] == -1 )
-			{
-				koef = pSubMatr[i*(Size+1) + Iter] / LeadingRow;
-				for(int j = Iter; j < Size; j++)
-					pSubMatr[i*(Size+1) + j] -= koef * pPivotStr[j];
-				pSubMatr[i*(Size+1) + (Size)] -= koef * pPivotStr[Size];
-			}
-		} 
-		MPI_Gather(pSubMatr, k*(Size+1), MPI_DOUBLE, pMatrixp, k*(Size+1), MPI_DOUBLE,0, MPI_COMM_WORLD); 
-		//Внешний цикл выполняется последовательно, распараллеливаются лишь части внутри него
-	}  
-	pResultp = new double[Size];
-	MPI_Bcast(LeadingRowPos, Size, MPI_INT, 0, MPI_COMM_WORLD);
-	for(int i = Size-1; i >= 0; --i) // обратный ход
-	{
-		int StrPos = LeadingRowPos[i]; //Номер строки, соответствующей i-ой итерации
-		int rank = StrPos / k; //Номер процесса, который исключается из рассылки (такая строка у него уже есть)
-		if( ProcRank == rank )
-		{
-			int StrPosL = StrPos % k;
-			pResultp[i] = pSubMatr[StrPosL*(Size+1) + Size] / pSubMatr[(Size+1) * StrPosL + i];
-			pSubMatr[StrPosL*(Size+1) + i] = 1;
-			for(int m = 0; m < k; m++)
-				if( m != StrPosL && i > LeadingRowIterL[m]) //Итерация, на которой данная строка была ведущей
-				{
-					pSubMatr[m*(Size+1) + Size] -= pSubMatr[m*(Size+1) + i] * pResultp[i];
-					pSubMatr[m*(Size+1) + i] = 0;
-				} 
-		}
-		MPI_Bcast(&pResultp[i], 1, MPI_DOUBLE, rank, MPI_COMM_WORLD); 
-		if(ProcRank != rank)
-			for(int m = 0; m < k; m++)
-				if(i > LeadingRowIterL[m]) //Итерация, на которой эта строка была ведущей(m-я строка)
-				{
-					pSubMatr[m*(Size+1) + Size] -= pSubMatr[m*(Size+1) + i] * pResultp[i];
-					pSubMatr[m*(Size+1) + i] = 0;
-				}
-	}
-	end_time = MPI_Wtime();
+	MPI_Bcast(&Size, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	pResultp = new double [Size];
+	ParallelCalculation(pMatrixp,pResultp,Size,ProcNum,ProcRank);
 	if(ProcRank == 0)
 	{
+		end_time = MPI_Wtime();
 		cout << "\nParallel realisation:" << endl;
 		Output(pResultp, Size);
 		parallel_time = end_time - start_time;
 		cout << "\nTime: " << parallel_time << endl;
 		cout << "\nBoost: " << serial_time / parallel_time << endl;
-	}
-	MPI_Barrier(MPI_COMM_WORLD);
-	if(ProcRank == ProcNum - 1)
 		Validation(pResults, pResultp, Size);
-	MPI_Barrier(MPI_COMM_WORLD);
+	}
 	MPI_Finalize();
 	return 0;
 }
