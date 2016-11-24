@@ -195,26 +195,19 @@ void ParallelCalculation(double* Matrix, double* Result , int Size , int ProcNum
 		// Определение позиции ведущей строки
 		sPivotRow* recvtmp = new sPivotRow[ProcNum];
 		sPivotRow A; A.Row = -1; A.Value = 0;
-		if(ProcRank == 0)
+		int s;
+		if (ProcRank == 0) s = p;
+		else s = k;
+		for(int i = 0; i < s; i++)
 		{
-			for(int i = 0; i < p; i++)
-				if( (pPivotIterL[i] == -1) && fabs(pSubMatr[i*(Size+1)+Iter]) > A.Value )
-				{
-					A.Value = pSubMatr[i*(Size+1)+Iter];
-					A.Row = i;
-				}
-		} 
-		else 
-		{
-			for(int i = 0; i < k; i++)
-				if( (pPivotIterL[i] == -1) && fabs(pSubMatr[i*(Size+1)+Iter]) > A.Value )
-				{
-					A.Value = pSubMatr[i*(Size+1)+Iter];
-					A.Row = p + (ProcRank-1)*k + i;
-				}
+			if( (pPivotIterL[i] == -1) && fabs(pSubMatr[i*(Size+1)+Iter]) > A.Value )
+			{
+				A.Value = pSubMatr[i*(Size+1)+Iter];
+				A.Row = i;
+			}
 		}
 		MPI_Gather(&A, 1, TPivot, recvtmp, 1, TPivot,0, MPI_COMM_WORLD); 
-		if( ProcRank == 0 )
+		if(ProcRank == 0)
 		{
 			double MaxValue = 0;
 			for(int i = 0; i < ProcNum; i++)
@@ -242,7 +235,6 @@ void ParallelCalculation(double* Matrix, double* Result , int Size , int ProcNum
 		MPI_Bcast(pPivotStr, Size+1, MPI_DOUBLE, r, MPI_COMM_WORLD);
 		double PivotValue, Koef;
 		PivotValue = pPivotStr[Iter];
-		int s = 0;
 		if (ProcRank == 0) s = p;
 		else s = k;
 		for(int i = 0; i < s; i++) // преобразования прямого хода
