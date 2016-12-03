@@ -195,19 +195,29 @@ void ParallelCalculation(double* Matrix, double* Result , int Size , int ProcNum
 		// Определение позиции ведущей строки
 		sPivotRow* recvtmp = new sPivotRow[ProcNum];
 		sPivotRow A; A.Row = -1; A.Value = 0;
-		int s;
-		if (ProcRank == 0) s = p;
-		else s = k;
-		for(int i = 0; i < s; i++)
+		if(ProcRank == 0)
 		{
-			if( (pPivotIterL[i] == -1) && fabs(pSubMatr[i*(Size+1)+Iter]) > A.Value )
-			{
-				A.Value = pSubMatr[i*(Size+1)+Iter];
-				A.Row = i;
-			}
+			int s;
+			if (ProcRank == 0) s = p;
+			else s = k;
+			for(int i = 0; i < p; i++)
+				if( (pPivotIterL[i] == -1) && fabs(pSubMatr[i*(Size+1)+Iter]) > A.Value )
+				{
+					A.Value = pSubMatr[i*(Size+1)+Iter];
+					A.Row = i;
+				}
+		} 
+		else 
+		{
+			for(int i = 0; i < k; i++)
+				if( (pPivotIterL[i] == -1) && fabs(pSubMatr[i*(Size+1)+Iter]) > A.Value )
+				{
+					A.Value = pSubMatr[i*(Size+1)+Iter];
+					A.Row = p + (ProcRank-1)*k + i;
+				}
 		}
 		MPI_Gather(&A, 1, TPivot, recvtmp, 1, TPivot,0, MPI_COMM_WORLD); 
-		if(ProcRank == 0)
+		if( ProcRank == 0 )
 		{
 			double MaxValue = 0;
 			for(int i = 0; i < ProcNum; i++)
@@ -235,6 +245,7 @@ void ParallelCalculation(double* Matrix, double* Result , int Size , int ProcNum
 		MPI_Bcast(pPivotStr, Size+1, MPI_DOUBLE, r, MPI_COMM_WORLD);
 		double PivotValue, Koef;
 		PivotValue = pPivotStr[Iter];
+		int s = 0;
 		if (ProcRank == 0) s = p;
 		else s = k;
 		for(int i = 0; i < s; i++) // преобразования прямого хода
@@ -251,17 +262,13 @@ void ParallelCalculation(double* Matrix, double* Result , int Size , int ProcNum
 	for(int i = Size-1; i >= 0; --i) // обратный ход метода Гауса
 	{
 		int StrPos = pPivotPosp[i];  // Номер строки, соответствующей i-ой итерации
-		int rank;
-		if (StrPos < p) rank = 0;
-		else rank = (StrPos - p) / k + 1; 
-		if (ProcRank == rank)
+		int rank = StrPos / k; // Номер процесса, который исключается из рассылки, у него есть такая строка
+		if( ProcRank == rank )
 		{
-			int StrPosL;
-			if (ProcRank == 0) StrPosL = StrPos;
-			else StrPosL = (StrPos - p - k*(ProcRank - 1))% k;
+			int StrPosL = StrPos % k;
 			Result[i] = pSubMatr[StrPosL*(Size+1) + Size] / pSubMatr[(Size+1) * StrPosL + i];
 			pSubMatr[StrPosL*(Size+1) + i] = 1;
-			for(int m = 0; m < p; m++)
+			for(int m = 0; m < k; m++)
 				if( m != StrPosL && i > pPivotIterL[m]) // Итерация, на которой данная строка была ведущей
 				{
 					pSubMatr[m*(Size+1) + Size] -= pSubMatr[m*(Size+1) + i] * Result[i];
@@ -269,18 +276,13 @@ void ParallelCalculation(double* Matrix, double* Result , int Size , int ProcNum
 				} 
 		}
 		MPI_Bcast(&Result[i], 1, MPI_DOUBLE, rank, MPI_COMM_WORLD); 
-		if (ProcRank != rank)
-		{
-			int s;
-			if (ProcRank == 0) s = p;
-			else s = k;
-			for(int m = 0; m < s; m++)
-				if( i > pPivotIterL[m]) // Итерация, на которой эта строка была ведущей(m-я строка)
+		if(ProcRank != rank)
+			for(int m = 0; m < k; m++)
+				if(i > pPivotIterL[m]) //Итерация, на которой эта строка была ведущей(m-я строка)
 				{
 					pSubMatr[m*(Size+1) + Size] -= pSubMatr[m*(Size+1) + i] * Result[i];
 					pSubMatr[m*(Size+1) + i] = 0;
 				}
-		}
 	}
 } 
 
