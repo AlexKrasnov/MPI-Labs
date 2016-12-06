@@ -6,17 +6,17 @@
 
 using namespace std;
 
-#define MATRIX_SIZE 256 // размер матарицы по умолчанию
+#define MATRIX_SIZE 8 // размер матарицы по умолчанию
 #define THRESHOLD 1 // размер матриц для перехода к обычному умножению по умолчанию
 
-int log2(const int Size) // логарифм по основанию 2
+int log(const int Size, const int base) // логарифм по основанию base
 {
-	return int(log(Size) / log(2));
+	return int(log(Size) / log(base));
 }
 
-bool ShowPower2ornot(const int Size) // проверяем является ли размер матрицы степенью двойки
+bool ShowPowerornot(const int Size, const int base) // проверяем является ли размер матрицы степенью двойки
 {
-	return (int(pow(2,log2(Size)))) == Size;
+	return (int(pow(base,log(Size, base)))) == Size;
 }
 
 bool ShowFullSquareornot(const int Size) // проверяем является ли размер матрицы степенью двойки
@@ -24,11 +24,11 @@ bool ShowFullSquareornot(const int Size) // проверяем является 
 	return (int(sqrt(Size))*int(sqrt(Size)) == Size);
 }
 
-int Increase (const int Size) // увеличиваем размер матрицы до ближайшей степени двойки
+int Increase (const int Size, const int base) // увеличиваем размер матрицы до ближайшей степени двойки
 {
 	int res;
-	if (!ShowPower2ornot(Size)) res = 1 << (log2(Size) + 1);
-	else res = 1 << (log2(Size));
+	if (!ShowPowerornot(Size, base)) res = 1 << (log(Size, base) + 1);
+	else res = 1 << (log(Size, base));
 	return res;
 }
 
@@ -36,7 +36,7 @@ void Input(int *Matrix1, int *Matrix2, const int N) // формирование 
 {
 	cout << "\t\t***Multiplication dense matrices. Strassen Algorithm***\n\n";
 
-	for (int i = 0; i < Increase(N)*Increase(N); i++)
+	for (int i = 0; i < Increase(N,2)*Increase(N,2); i++)
 	{
 		Matrix1[i] = 0;
 		Matrix2[i] = 0;
@@ -46,8 +46,8 @@ void Input(int *Matrix1, int *Matrix2, const int N) // формирование 
 	{
 		for (int j = 0; j < N; j++)
 		{
-			Matrix1[i*Increase(N)+j] = rand() % 10 - 5;
-			Matrix2[i*Increase(N)+j] = rand() % 10 - 5;
+			Matrix1[i*Increase(N,2)+j] = rand() % 10 - 5;
+			Matrix2[i*Increase(N,2)+j] = rand() % 10 - 5;
 		}
 	}
 	if (N <= 10)
@@ -55,11 +55,11 @@ void Input(int *Matrix1, int *Matrix2, const int N) // формирование 
 		cout << "Matrix1: " << endl;
 		for (int i = 0; i < N; i++, cout << endl)
 			for (int j = 0; j < N; j++)
-				cout << Matrix1[i*Increase(N) + j] << " ";
+				cout << Matrix1[i*Increase(N,2) + j] << " ";
 		cout << endl << "Matrix2: " << endl;
 		for (int i = 0; i < N; i++, cout << endl)
 			for (int j = 0; j < N; j++)
-				cout << Matrix2[i*Increase(N) + j] << " ";
+				cout << Matrix2[i*Increase(N,2) + j] << " ";
 		cout << endl;
 	}
 }
@@ -72,7 +72,7 @@ void Output(const int *Result, const int N) // печать матрицы
 		for (int i = 0; i < N; i++)
 		{
 			for (int j = 0; j < N; j++)
-				cout << Result[i*Increase(N) + j] << " ";
+				cout << Result[i*Increase(N,2) + j] << " ";
 			cout << endl;
 		}
 		cout << endl;
@@ -124,7 +124,8 @@ int *StrassenAlgorithm(int *Matrix1, int *Matrix2, int N, int threshold)
 		result = StandardAlgorithm(Matrix1, Matrix2, N);
 	else
 	{
-		result = new int[N*N];
+		result = new int[Increase(N,2)*Increase(N,2)];
+
 		N /= 2; // Матрица разбивается на 4 блока размерами N/2 * N/2
 
 		/* Создаём вспомогательные матрицы, выделяем память */
@@ -139,7 +140,6 @@ int *StrassenAlgorithm(int *Matrix1, int *Matrix2, int N, int threshold)
 		{
 			for (int j = 0; j < N; j++)
 			{
-				//int index_new = i*N+j,index_old = 2*i*N+j, N_N = 2*N*N;
 				A[0][i*N+j] = Matrix1[2*i*N+j];
 				A[1][i*N+j] = Matrix1[2*i*N+j+N];
 				A[2][i*N+j] = Matrix1[2*i*N+j+2*N*N];
@@ -203,18 +203,9 @@ void Test(int *Matrix1, int *Matrix2, int *strassen_result, int N)
 		}
 	}
 	if (f == true)
-		cout << "\nThe results of the standard algorithm and Strassen algorithm are equal\n" << endl;
+		cout << "The results of the standard algorithm and Strassen algorithm are equal" << endl;
 	else
-		cout << "\nThe results of the standard algorithm and Strassen algorithm are NOT equal\n" << endl;
-}
-
-void MegaTest(int Size)
-{
-	for (int i = 0; i < Size; i++)
-	{
-		int *res1 = new int [i];
-		int *res2 = new int [i];
-	}
+		cout << "The results of the standard algorithm and Strassen algorithm are NOT equal" << endl;
 }
 
 int main(int argc, char *argv[])
@@ -224,20 +215,27 @@ int main(int argc, char *argv[])
 		**A, **B, **tmp, *Matrix1, *Matrix2, *result_s, *result_p;
 	if (argc >= 2) Size = atoi(argv[1]);
 	if (argc >= 3) threshold = atoi(argv[2]);
-	int new_Size = Increase(Size);
 	double start_time, end_time, serial_time, parallel_time;
 	MPI_Status Status;
 	MPI_Init(&argc,&argv);
 	MPI_Comm_size(MPI_COMM_WORLD, &procnum);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	int new_Size = Increase(Size, 2);
 	try
 	{
-		if (!ShowPower2ornot(procnum) || !ShowFullSquareornot(procnum))
+		if (!ShowFullSquareornot(procnum) || !ShowPowerornot(Size, 2))
 		{
 			if (rank == 0)
-				throw "The number of processes must be a power of 2 and a full square";
+				throw "\nERROR:\nThe number of processes must be a power of 2 and a perfect square\n";
 		}
-		else
+		if (procnum > new_Size * new_Size)
+		{
+			if (rank == 0)
+				throw "\nERROR:\nThe number of processes must be <= Size * Size\n";
+		}
+		GridSize = (int)sqrt((double)procnum); // число делений решётки для строки(столбца) 
+		BlockSize = new_Size / GridSize; // размер блока
+		{
 			if (rank == 0)
 			{
 				Matrix1 = new int [new_Size*new_Size]; 
@@ -245,13 +243,12 @@ int main(int argc, char *argv[])
 				result_p = new int [new_Size*new_Size]; 
 				Input(Matrix1, Matrix2, Size);
 				start_time = MPI_Wtime();
-				result_s = StrassenAlgorithm(Matrix1,Matrix2,Increase(Size),threshold);
+				result_s = StrassenAlgorithm(Matrix1,Matrix2,Increase(Size,2),threshold);
 				end_time = MPI_Wtime();
 				cout << "Serial realisation: " << endl;
 				Output(result_s, Size); // результат умножения матриц обычным методом
 				serial_time = end_time - start_time;
 				cout << "Serial time: " << fixed << serial_time << endl;
-				//Test(Matrix1,Matrix2,result_s,Increase(Size));
 
 				//------------------------------------------------------------------------
 				//      Параллельная реализация
@@ -261,7 +258,6 @@ int main(int argc, char *argv[])
 				/*Рассылка данных другим процессам*/
 				MPI_Bcast(&new_Size, 1, MPI_INT, 0, MPI_COMM_WORLD); 
 				MPI_Bcast(&threshold, 1, MPI_INT, 0, MPI_COMM_WORLD);
-				GridSize = (int)sqrt((double)procnum), BlockSize = new_Size/GridSize;
 				A = new int*[procnum], B = new int*[procnum];
 				for(int i = 0; i < procnum; i++)
 				{
@@ -301,15 +297,11 @@ int main(int argc, char *argv[])
 			{
 				MPI_Bcast(&new_Size, 1, MPI_INT, 0, MPI_COMM_WORLD);
 				MPI_Bcast(&threshold, 1, MPI_INT, 0, MPI_COMM_WORLD);
-				GridSize = (int)sqrt((double)procnum), BlockSize = new_Size/GridSize;
 				A = new int*[GridSize], B = new int*[GridSize];
 				for(int i = 0; i < GridSize; i++)
 				{
 					A[i] = new int [BlockSize*BlockSize];
 					B[i] = new int [BlockSize*BlockSize];
-				}
-				for(int i = 0; i < GridSize; i++)
-				{
 					MPI_Recv(A[i], BlockSize*BlockSize, MPI_INT, 0, 0, MPI_COMM_WORLD, &Status);
 					MPI_Recv(B[i], BlockSize*BlockSize, MPI_INT, 0, 0, MPI_COMM_WORLD, &Status);
 				}
@@ -317,35 +309,18 @@ int main(int argc, char *argv[])
 			/*вычисление каждым процессом своего куска матрицы*/
 			tmp = new int*[GridSize+1];
 			for(int i = 0; i < GridSize; i++)
-				tmp[i+1] = StandardAlgorithm(A[i], B[i], BlockSize);
-			if (procnum == 1)
-				tmp[0] = tmp[1];
-			if(procnum == 4)
-				tmp[0] = Add(tmp[1], tmp[2], BlockSize);
-			if(procnum == 16)
-				tmp[0] = Add(Add(Add(tmp[1], tmp[2], BlockSize),tmp[3],BlockSize),tmp[4],BlockSize);
+				tmp[i+1] = StrassenAlgorithm(A[i], B[i], BlockSize, threshold);
+			tmp[0] = tmp[1];
+			for (int i = 2; i < GridSize+1; i++)
+				tmp[0] = Add(tmp[0], tmp[i], BlockSize);
 			/*Освобождение вспомогательной памяти*/
-			if(procnum == 0)
+			for(int i = 0; !procnum ? i < procnum : i < GridSize; i++)
 			{
-				for(int i = 0; i < procnum; i++)
-				{
-					delete[] A[i];
-					delete[] B[i];
-				}
-			}
-			else
-			{
-				for(int i = 0; i < GridSize; i++)
-				{
-					delete[] A[i];
-					delete[] B[i];
-				}
+				delete[] A[i]; delete[] B[i];
 			}
 			for(int i = 1; i < GridSize+1; i++)
 				delete[] tmp[i];
-			delete[] A;
-			delete[] B;
-
+			delete[] A; delete[] B;
 			/*Отправка результата на 0 процесс*/
 			if (rank != 0)	
 			{
@@ -354,42 +329,38 @@ int main(int argc, char *argv[])
 			}
 			if (rank == 0)
 			{
-				int coef = (int)sqrt((double)procnum);
-				/*записываем результат совей работы*/
+				/*записываем результат работы 0-процесса*/
 				for(int i = 0; i < BlockSize; i++)
 					for(int j = 0; j < BlockSize; j++)
-						result_p[coef*i*BlockSize+j] = tmp[0][i*BlockSize+j];
+						result_p[GridSize*i*BlockSize+j] = tmp[0][i*BlockSize+j];
 				for(int k = 1; k < procnum; k++)
 				{
 					/*принимаем и записываем результаты работы других процессов*/
 					MPI_Recv(tmp[0], BlockSize*BlockSize, MPI_INT, k, 0, MPI_COMM_WORLD, &Status);
 					for(int i = 0; i < BlockSize; i++)
 						for(int j = 0; j < BlockSize; j++)
-							result_p[(k/coef)*BlockSize*new_Size+(k%coef)*BlockSize+coef*i*BlockSize+j] = tmp[0][i*BlockSize+j];
+							result_p[(k/GridSize)*BlockSize*new_Size+(k%GridSize)*BlockSize+GridSize*i*BlockSize+j] = tmp[0][i*BlockSize+j];
 				}
-			}
-			if (rank == 0)
-			{
 				end_time = MPI_Wtime();
 				cout << "Parallel realisation: " << endl;
 				Output(result_p, Size); // результат умножения матриц обычным методом
 				parallel_time = end_time - start_time;
 				cout << "Parallel time: " << fixed << parallel_time << endl;
+				cout << fixed << "Boost: "<< serial_time / parallel_time << endl;
+				// сравнение результатов последовательного алгоритма Штрассена и параллельного
 				bool flag = true;
 				for (int i = 0; (i < new_Size * new_Size) && (flag == true); i++)
 					if (result_s[i] != result_p[i])
 						flag = false;
-				if(flag) cout << "The results are equal" << endl;
-				else cout << "The results are not equal" << endl;
-				delete [] result_p;
-				delete [] result_s;
-				delete [] Matrix1;
-				delete [] Matrix2;
-				cout << fixed << "Boost: "<< serial_time / parallel_time << endl;
+				if(flag) cout << "The serial result and the parallel result are equal" << endl;
+				else cout << "The serial result and the parallel result are NOT equal" << endl;
+				// сравнение результатов стандартного алгоритма и алгоритма Штрассена
+				// Test(Matrix1,Matrix2,result_s,Increase(Size,2)); 
+				delete [] result_p; delete [] result_s; delete [] Matrix1; delete [] Matrix2;
 			}
-
 			MPI_Finalize();
 			return 0;
+		}
 	}
 	catch(const char* error)
 	{
