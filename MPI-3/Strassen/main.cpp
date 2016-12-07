@@ -223,7 +223,7 @@ int main(int argc, char *argv[])
 	int new_Size = Increase(Size, 2);
 	try
 	{
-		if (!ShowFullSquareornot(procnum) || !ShowPowerornot(Size, 2))
+		if (!ShowFullSquareornot(procnum) || !ShowPowerornot(procnum, 2))
 		{
 			if (rank == 0)
 				throw "\nERROR:\nThe number of processes must be a power of 2 and a perfect square\n";
@@ -264,6 +264,7 @@ int main(int argc, char *argv[])
 					A[i] = new int [BlockSize*BlockSize];
 					B[i] = new int [BlockSize*BlockSize];
 				}
+				/* Разделение матриц на блоки */
 				for(int i = 0; i < new_Size; i++)
 				{
 					for(int j = 0; j < new_Size; j++)
@@ -272,6 +273,7 @@ int main(int argc, char *argv[])
 						B[GridSize*(i/BlockSize)+j/BlockSize][(i%BlockSize)*BlockSize+(j%BlockSize)] = Matrix2[i*new_Size+j];
 					}
 				}
+				/* Отправление блоков процессам для умножения в соответсвующей индексации */
 				for(int i = 1; i < procnum; i++)
 				{
 					int coef_A = GridSize*(i / GridSize), coef_B = i % GridSize;
@@ -283,16 +285,14 @@ int main(int argc, char *argv[])
 						coef_B += GridSize;
 					}
 				}
-
-				/*Swap указателей для однообразных вычислений*/
-				for(int i = 0; i < GridSize; i++)
+				for(int i = 1; i < GridSize; i++)
 				{
 					int* С = B[i];
 					B[i] = B[i*GridSize];
 					B[i*GridSize] = С;
 				}
 			}
-			/*Прием данных от процесса-root и формировка нужных данных*/
+			/* прием данных от процесса-root и формировка нужных данных */
 			if(rank != 0)
 			{
 				MPI_Bcast(&new_Size, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -313,6 +313,8 @@ int main(int argc, char *argv[])
 			tmp[0] = tmp[1];
 			for (int i = 2; i < GridSize+1; i++)
 				tmp[0] = Add(tmp[0], tmp[i], BlockSize);
+			if (procnum == 1)
+				tmp[0] = StrassenAlgorithm(A[0], B[0], BlockSize, threshold);
 			/*Освобождение вспомогательной памяти*/
 			for(int i = 0; !procnum ? i < procnum : i < GridSize; i++)
 			{
@@ -335,7 +337,7 @@ int main(int argc, char *argv[])
 						result_p[GridSize*i*BlockSize+j] = tmp[0][i*BlockSize+j];
 				for(int k = 1; k < procnum; k++)
 				{
-					/*принимаем и записываем результаты работы других процессов*/
+					/* принимаем и записываем результаты работы других процессов */
 					MPI_Recv(tmp[0], BlockSize*BlockSize, MPI_INT, k, 0, MPI_COMM_WORLD, &Status);
 					for(int i = 0; i < BlockSize; i++)
 						for(int j = 0; j < BlockSize; j++)
@@ -343,18 +345,18 @@ int main(int argc, char *argv[])
 				}
 				end_time = MPI_Wtime();
 				cout << "Parallel realisation: " << endl;
-				Output(result_p, Size); // результат умножения матриц обычным методом
+				Output(result_p, Size);
 				parallel_time = end_time - start_time;
 				cout << "Parallel time: " << fixed << parallel_time << endl;
 				cout << fixed << "Boost: "<< serial_time / parallel_time << endl;
-				// сравнение результатов последовательного алгоритма Штрассена и параллельного
+				/* сравнение результатов последовательного алгоритма Штрассена и параллельного */
 				bool flag = true;
 				for (int i = 0; (i < new_Size * new_Size) && (flag == true); i++)
 					if (result_s[i] != result_p[i])
 						flag = false;
 				if(flag) cout << "The serial result and the parallel result are equal" << endl;
 				else cout << "The serial result and the parallel result are NOT equal" << endl;
-				// сравнение результатов стандартного алгоритма и алгоритма Штрассена
+				/* сравнение результатов стандартного алгоритма и алгоритма Штрассена */
 				// Test(Matrix1,Matrix2,result_s,Increase(Size,2)); 
 				delete [] result_p; delete [] result_s; delete [] Matrix1; delete [] Matrix2;
 			}
