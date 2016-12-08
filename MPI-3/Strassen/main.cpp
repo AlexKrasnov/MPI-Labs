@@ -14,17 +14,17 @@ int log(const int Size, const int base) // логарифм по основан�
 	return int(log(Size) / log(base));
 }
 
-bool ShowPowerornot(const int Size, const int base) // проверяем является ли размер матрицы степенью двойки
+bool ShowPowerornot(const int Size, const int base) // проверяем является ли размер матрицы степенью base
 {
 	return (int(pow(base,log(Size, base)))) == Size;
 }
 
-bool ShowFullSquareornot(const int Size) // проверяем является ли размер матрицы степенью двойки
+bool ShowPerfectSquareornot(const int Size) // проверяем является ли размер матрицы полным квадратом
 {
 	return (int(sqrt(Size))*int(sqrt(Size)) == Size);
 }
 
-int Increase (const int Size, const int base) // увеличиваем размер матрицы до ближайшей степени двойки
+int Increase (const int Size, const int base) // увеличиваем размер матрицы до ближайшей степени base
 {
 	int res;
 	if (!ShowPowerornot(Size, base)) res = 1 << (log(Size, base) + 1);
@@ -223,7 +223,7 @@ int main(int argc, char *argv[])
 	int new_Size = Increase(Size, 2);
 	try
 	{
-		if (!ShowFullSquareornot(procnum) || !ShowPowerornot(procnum, 2))
+		if (!ShowPerfectSquareornot(procnum) || !ShowPowerornot(procnum, 2))
 		{
 			if (rank == 0)
 				throw "\nERROR:\nThe number of processes must be a power of 2 and a perfect square\n";
